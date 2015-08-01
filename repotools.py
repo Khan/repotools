@@ -23,6 +23,9 @@ def hit_github(endpoint, params={}, method="GET"):
 def get_branch(repo_dict):
     return repo_dict.get('default_branch')
 
+def rawktopoke(endpoint, params=None, method="GET", *args, **kwargs):
+    # get the raw requests response
+    return octopoke(endpoint, params, method, raw_response=True, *args, **kwargs)
 
 def octopoke(endpoint, params=None, method="GET", *args, **kwargs):
     """poke the github api and get json back
@@ -33,6 +36,7 @@ def octopoke(endpoint, params=None, method="GET", *args, **kwargs):
             except that the values should already be populated by you
         params: any query/post params
         method: GET by default, but whatever works
+        raw_response: False by default, True returns request response
     """
     if not params:
         params = {}
@@ -40,12 +44,16 @@ def octopoke(endpoint, params=None, method="GET", *args, **kwargs):
     default_params = {'access_token': TOKEN}
     default_params.update(params)
 
+    # don't do this, just use rawktopoke instead
+    raw_response = kwargs.pop('raw_response', False)
+
     endpoint_params = {'API_ROOT': API_ROOT, 'endpoint': endpoint}
     api_endpoint = "{API_ROOT}{endpoint}".format(**endpoint_params)
     res = requests.request(method=method, url=api_endpoint, params=default_params, *args, **kwargs)
-    if res.headers.get('location'):
-        print "  " + res.headers['status'] + " @ " + res.headers.get('location','')
-    return res.json()
+    if raw_response:
+        return res
+    else:
+        return res.json()
 
 
 def get_refs(repo_dict):
@@ -189,7 +197,9 @@ def main():
             update_default_branch_with_commit(owner, repo, ['.arclint', '.arcconfig'], commit_message)
 
 if __name__ == '__main__':
-    main()
+    # main()
+    pass
+
 # def repo_tree(repo, sha):
 #     org = "khan"
 #     return API_ROOT + "/repos/%s/%s/git/trees/%s" % (org, repo, sha)
