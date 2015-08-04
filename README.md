@@ -14,6 +14,18 @@ what you find here. More likely, though, you're better off just creating a new c
 just want to blast the file away with the updates. The commit will register the delta between
 the two files anyway.
 
+much of this was implemented while learning the github api, so its structure is not
+particularly well thought out. if you are trying to figure out how something works, you may
+want to look at the two methods:
+
+* `commit_to_repos`
+* `arclint_at_ka'
+
+and unwind that virtual call stack. `commit_to_repos` is better to look at since i already knew
+a bit more about what was going on at the time. `arclint_at_ka` is a bit confused, but i mean,
+it clearly gets the job done.
+
+A caveat: in the world of github, a private fork is listed as a 'source' repo.
 
 ## "installing"
 
