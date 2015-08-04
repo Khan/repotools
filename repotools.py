@@ -15,20 +15,29 @@ DEFAULT_ARGS = {
     'owner': 'khan'
 }
 
+# gosh, so many apologies here, i started doing this "hit_github" approach
+# and then realized what a bad idea it was and moved to octopoke and rawktopoke
+# but by then the damage was already done. the refactor should be easy though.
+
 def hit_github(endpoint, params={}, method="GET"):
+    """No don't use this. i'm very sorry."""
     default_params = {'access_token': TOKEN}
     default_params.update(params)
     return requests.request(method, endpoint, params=default_params).json()
 
+
 def get_branch(repo_dict):
+    """a superfluous function"""
     return repo_dict.get('default_branch')
 
+
 def rawktopoke(endpoint, params=None, method="GET", *args, **kwargs):
-    # get the raw requests response
+    """like octopoke but w/ a requests.Response object (for checkin' status codes, etc)"""
     return octopoke(endpoint, params, method, raw_response=True, *args, **kwargs)
 
+
 def octopoke(endpoint, params=None, method="GET", *args, **kwargs):
-    """poke the github api and get json back
+    """poke the github api and get the json respose back as a dict
 
     kwargs:
         endpoint: what you see in the api docs, i.e.
@@ -57,6 +66,7 @@ def octopoke(endpoint, params=None, method="GET", *args, **kwargs):
 
 
 def get_refs(repo_dict):
+    """"""
     endpoint = "{API_ROOT}/repos/{owner}/{repo}/git/refs/heads/{default_branch}"
     url_args = {
         'repo': repo_dict.get('name'),
@@ -67,7 +77,14 @@ def get_refs(repo_dict):
     url = endpoint.format(**url_args)
     return hit_github(url)
 
+
 def get_tree(repo_dict):
+    """returns a tree of blobs(files) for a given repository by looking
+    at the most recent sha on its default branch
+
+    repo_dict is what you get when you query
+    {API_ROOT}/repos/{owner}/{repo}
+    """
     endpoint = "{API_ROOT}/repos/{owner}/{repo}/git/trees/{sha}"
     url_args = {
         'repo': repo_dict['name'],
@@ -78,12 +95,31 @@ def get_tree(repo_dict):
 
     return hit_github(url)
 
+
 def find_file_in(filename, repo_dict):
+    """find a file in the tree of the newest commit of a repo's default branch
+
+    NB: some bugs here, if the tree is too large, github will just ¯\_(ツ)_/¯
+    and you need to find some other way to either page through the results or
+    do some other chicanery to find that file (probably cloning the repo)
+
+    repo_dict is the object you get from querying
+    {API_ROOT}/repos/{owner}/{repo}
+    """
     tree = get_tree(repo_dict).get('tree')
     return len([leaf for leaf in tree
                     if leaf['path'] == filename]) == 1
 
+
 def arclint_at_ka():
+    """check for .arclint on ka repos
+
+    assuming you have two json files of repo data from the github api
+    you can feed them to this and this will go through each of the
+    repositories and look for .arclint in them.
+
+    this was once a main() function, so it's not very smart or well
+    written."""
     with open('karepos.json') as f:
         repodata = json.load(f)
     with open('karepos2.json') as f:
@@ -103,18 +139,30 @@ def arclint_at_ka():
 
 
 def get_base_sha(owner, repo):
+    """for a given repo, get its default branch's latest commit/sha
+
+    you can use this sha to build a commit on top of the repo.
+
+    TODO: pass in a given branch (or better yet, ref), this assumes you're
+    treating your main branch like refs/heads/<branch_name> which is sort
+    of like cheating...
+    """
     api_endpoint = '/repos/{owner}/{repo}'.format(**{'owner':owner, 'repo': repo})
     repo_dict = octopoke(api_endpoint, {})
-    # print repo_dict
-    # default_branch = repo_dict.get('default_branch')
+
     ref_endpoint = '/repos/{owner}/{repo}/git/refs/heads/{ref}'.format(**{
         'owner': owner, 'repo':repo, 'ref': repo_dict.get('default_branch')})
-    # print ref_endpoint
+
     refs = octopoke(ref_endpoint, {})
     return refs.get('object').get('sha')
 
 
 def add_blob(owner, repo, filename):
+    """you can use this to create a blob from a filename
+
+    i don't recommend you use this actually, but it will do the right thing and
+    return the sha of the blob's ref. it's on you to create a commit or other ref that
+    will eventually point back to this in a way that is meaningful"""
     with open(filename) as f:
         contents = f.read()
 
@@ -131,7 +179,16 @@ def add_blob(owner, repo, filename):
 
 
 def obj_for_path(path):
-    import hashlib
+    """a convenience method for add_tree_of_files.
+
+    this assumes that you want 'path' to match on the repo. so that this file
+    needs to be in the same spot relative to this script as it would be relative
+    to the root of the target repository you are modifying.
+
+    i.e. if the path is ".arclint" then you will get a "<repo>/.arclint" file.
+
+    TODO: the mode should be derived by using the os module rather than
+    always just being 'file'. """
     with open(path) as f:
         contents = f.read()
         return {
@@ -144,6 +201,14 @@ def obj_for_path(path):
 
 def add_tree_of_files(owner, repo, paths):
     """
+    Creates a tree from a series of paths.
+
+    The paths will be resolved, the files will be read and they will be
+    added to the repository relative to its root in the same way that they
+    are relative to the location of this script when it runs.
+
+    TODO: make it possible to specify the location of the file independently
+    from the destination (or at least have sensible defaults to override)
     [{
         sha: '....',
         type: 'blob',
@@ -168,6 +233,7 @@ def commit_with_files(owner, repo, paths, message):
     payload = {'message': message, 'tree': tree.get('sha'), 'parents': [base_tree]}
     return octopoke(commit_endpoint, method='POST', json=payload)
 
+
 def update_default_branch_with_commit(owner, repo, paths, message):
     """creates a commit on the default branch
 
@@ -183,7 +249,14 @@ def update_default_branch_with_commit(owner, repo, paths, message):
     octopoke(ref_endpoint, {}, method='PATCH', json={'sha': commit.get('sha')})
 
 
-def main():
+def commit_to_repos():
+    """create a commit in many repositories with './commit-msg'
+    as the content of the commit message.
+
+    this will scan through './repostoupdae.json' (an array of
+    form ['owner/repo_name',...]) and make the same commit over
+    and over and over again in all of them.
+    """
     with open('commit-msg') as f:
         commit_message = f.read()
 
@@ -196,35 +269,9 @@ def main():
             print "would now update {owner} // {repo}".format(owner=owner, repo=repo)
             update_default_branch_with_commit(owner, repo, ['.arclint', '.arcconfig'], commit_message)
 
-if __name__ == '__main__':
-    # main()
+def main():
     pass
 
-# def repo_tree(repo, sha):
-#     org = "khan"
-#     return API_ROOT + "/repos/%s/%s/git/trees/%s" % (org, repo, sha)
-
-
-# scan through json files:
-# 1.. get default branch
-# 2.. then hit
-#   GET /repos/:owner/:repo/git/refs/:ref
-#   where :ref == something like heads/default_branch
-# 3.. then get
-#   {
-#   "ref": "refs/heads/gh-pages",
-#   "url": "https://api.github.com/repos/Khan/thumbnail-sketches/git/refs/heads/gh-pages",
-#   "object": {
-#     "sha": "80c9dfc468e2a58d44856d3b33a607f9203b1f97",
-#     "type": "commit",
-#     "url": "https://api.github.com/repos/Khan/thumbnail-sketches/git/commits/{sha}"
-#   }
-# }
-
-# 4.. with sha, then get the tree
-#   GET /repos/:owner/:repo/git/trees/:sha
-
-# 5.. iterate over result['tree'] which is an array of
-# objects with a 'path' key. filter to see if path contains whatever
-#
-# 6. report if not .arclint not present
+if __name__ == '__main__':
+    # TODO: import argparse up top and implement here
+    main()
